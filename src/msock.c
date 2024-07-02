@@ -20,7 +20,9 @@ static void DieWithError(char* errorMessage)
 }
 
 
-SOCKET mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, struct addrinfo **multicastAddr) {
+SOCKET
+mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, struct addrinfo **multicastAddr)
+{
 
     SOCKET sock;
     struct addrinfo hints = { 0 };    /* Hints for name lookup */
@@ -29,7 +31,7 @@ SOCKET mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastT
 #ifdef WIN32
     WSADATA trash;
     if(WSAStartup(MAKEWORD(2,0),&trash)!=0)
-	DieWithError("Couldn't init Windows Sockets\n");
+		DieWithError("Couldn't init Windows Sockets\n");
 #endif
 
     
@@ -40,67 +42,75 @@ SOCKET mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastT
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags    = AI_NUMERICHOST;
     int status;
-    if ((status = getaddrinfo(multicastIP, multicastPort, &hints, multicastAddr)) != 0 )
-	{
-	    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-	    return -1;
-	}
+    if ((status = getaddrinfo(multicastIP, multicastPort, &hints, multicastAddr)) != 0)
+		{
+			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+			return -1;
+		}
 
    
 
     /* 
        Create socket for sending multicast datagrams 
     */
-    if ( (sock = socket((*multicastAddr)->ai_family, (*multicastAddr)->ai_socktype, 0)) < 0 ) {
-	perror("socket() failed");
-	freeaddrinfo(*multicastAddr);
-	return -1;
-    }
+    if ((sock = socket((*multicastAddr)->ai_family, (*multicastAddr)->ai_socktype, 0)) < 0)
+		{
+			perror("socket() failed");
+			freeaddrinfo(*multicastAddr);
+			return -1;
+		}
 
     /* 
        Set TTL of multicast packet 
     */
-    if ( setsockopt(sock,
-		    (*multicastAddr)->ai_family == PF_INET6 ? IPPROTO_IPV6        : IPPROTO_IP,
-		    (*multicastAddr)->ai_family == PF_INET6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL,
-		    (char*) &multicastTTL, sizeof(multicastTTL)) != 0 ) {
-	perror("setsockopt() failed");
-	freeaddrinfo(*multicastAddr);
-	return -1;
-    }
+    if (setsockopt(sock,
+				   (*multicastAddr)->ai_family == PF_INET6 ? IPPROTO_IPV6        : IPPROTO_IP,
+				   (*multicastAddr)->ai_family == PF_INET6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL,
+				   (char*) &multicastTTL, sizeof(multicastTTL)) != 0 )
+		{
+			perror("setsockopt() failed");
+			freeaddrinfo(*multicastAddr);
+			return -1;
+		}
     
     
     /* 
        set the sending interface 
     */
-    if((*multicastAddr)->ai_family == PF_INET) {
-	in_addr_t iface = INADDR_ANY; /* well, yeah, any */
-	if(setsockopt (sock, 
-		       IPPROTO_IP,
-		       IP_MULTICAST_IF,
-		       (char*)&iface, sizeof(iface)) != 0) { 
-	    perror("interface setsockopt() sending interface");
-	    freeaddrinfo(*multicastAddr);
-	    return -1;
-	}
-
-    }
-    if((*multicastAddr)->ai_family == PF_INET6) {
-	unsigned int ifindex = 0; /* 0 means 'default interface'*/
-	if(setsockopt (sock, 
-		       IPPROTO_IPV6,
-		       IPV6_MULTICAST_IF,
-		       (char*)&ifindex, sizeof(ifindex)) != 0) { 
-	    perror("interface setsockopt() sending interface");
-	    freeaddrinfo(*multicastAddr);
-	    return -1;
-	}   
-	 
-    }
+    if ((*multicastAddr)->ai_family == PF_INET)
+		{
+			in_addr_t iface = INADDR_ANY; /* well, yeah, any */
+			if(setsockopt(sock, 
+						  IPPROTO_IP,
+						  IP_MULTICAST_IF,
+						  (char*)&iface, sizeof(iface)) != 0)
+				{ 
+					perror("interface setsockopt() sending interface");
+					freeaddrinfo(*multicastAddr);
+					return -1;
+				}
+		}
+    else if ((*multicastAddr)->ai_family == PF_INET6)
+		{
+			unsigned int ifindex = 0; /* 0 means 'default interface'*/
+			if(setsockopt(sock, 
+						  IPPROTO_IPV6,
+						  IPV6_MULTICAST_IF,
+						  (char*)&ifindex, sizeof(ifindex)) != 0)
+				{ 
+					perror("interface setsockopt() sending interface");
+					freeaddrinfo(*multicastAddr);
+					return -1;
+				}
+		}
+	else
+		{
+			fprintf(stderr, "setsockopt: unknown address family\n");
+			return -1;			
+		}
 
      
     return sock;
-
 }
 
 
