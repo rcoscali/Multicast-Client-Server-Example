@@ -21,7 +21,7 @@
 
 
 #ifdef UNIX
-#include <unistd.h>
+# include <unistd.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,34 +35,35 @@ SOCKET     sock;                     /* Socket */
 char*      recvBuf;                  /* Buffer for received data */
 
 
-static void DieWithError(char* errorMessage)
+static void
+DieWithError(char* errorMessage)
 {
   fprintf(stderr, "%s\n", errorMessage);
-  if(sock >= 0)
+  if (sock >= 0)
     close(sock);
-  if(recvBuf)
+  if (recvBuf)
     free(recvBuf);
 
   exit(EXIT_FAILURE);
 }
 
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
   char*      multicastIP;              /* Arg: IP Multicast Address */
   char*      multicastPort;            /* Arg: Port */
   int        recvBufLen;               /* Length of receive buffer */
 
-
-  if ( argc != 4 )
+  if (argc != 4)
     {
-      fprintf(stderr,"Usage: %s <Multicast IP> <Multicast Port> <Receive Buffer Size>\n", argv[0]);
+      fprintf(stderr, "Usage: %s <Multicast IP> <Multicast Port> <Receive Buffer Size>\n", argv[0]);
       exit(EXIT_FAILURE);
     }
 
 #ifdef WIN32
   WSADATA trash;
-  if(WSAStartup(MAKEWORD(2,0),&trash)!=0)
+  if (WSAStartup(MAKEWORD(2, 0), &trash) != 0)
     DieWithError("Couldn't init Windows Sockets\n");
 #endif
 
@@ -70,17 +71,21 @@ int main(int argc, char* argv[])
   multicastPort = argv[2];      /* Second arg: Multicast port */
   recvBufLen    = atoi(argv[3]);
  
-  recvBuf = (char*)malloc(recvBufLen*sizeof(char));
-
+  recvBuf = (char*)malloc(recvBufLen * sizeof(char));
 
   sock = mcast_recv_socket(multicastIP, multicastPort, MULTICAST_SO_RCVBUF);
   if(sock < 0)
-      DieWithError("mcast_recv_socket() failed");
+    DieWithError("mcast_recv_socket() failed");
 
-  int rcvd=0;
-  int lost=0;
+  int server_id;
+  int rcvd = 0;
+  int lost = 0;
     
-  int last_p=-1;
+  int last_p[4];
+  last_p[0] = -1;
+  last_p[1] = -1;
+  last_p[2] = -1;
+  last_p[3] = -1;
   for (;;) /* Run forever */
     {
       time_t timer;
@@ -91,20 +96,21 @@ int main(int argc, char* argv[])
 	DieWithError("recvfrom() failed");
         
       ++rcvd;
-      int this_p = ntohl(*(int*)recvBuf);
+      unsigned int this_p = ntohl(*(int*)recvBuf);
+      server_id = this_p >> 30;
+      this_p = this_p & 0x3fffffff;
 
-      if(last_p >= 0) /* only check on the second and later runs */
+      if (last_p[server_id] >= 0) /* only check on the second and later runs */
 	{
-	  if(this_p - last_p > 1)
-	    lost += this_p - (last_p+1);
+	  if (this_p - last_p[server_id] > 1)
+	    lost += this_p - (last_p[server_id] + 1);
 	}
-      last_p = this_p;
+      last_p[server_id] = this_p;
         
       /* Print the received string */
       time(&timer);  /* get time stamp to print with recieved data */
-      printf("Packets recvd %d, lost %d, loss ratio %f\n", rcvd, lost, (double)lost/(double)(rcvd+lost));
-      printf("Time Received: %.*s : packet %d, %d bytes\n",
-	     (int)strlen(ctime(&timer)) - 1, ctime(&timer), this_p, bytes);
+      printf("Packets recvd %d (%d,%d,%d,%d) lost %d, loss ratio %f    ", rcvd, last_p[0], last_p[1], last_p[2], last_p[3], lost, (double)lost/(double)(rcvd + lost));
+      printf("Time Received: %.*s : packet (%d,%d) %d bytes\n", (int)strlen(ctime(&timer)) - 1, ctime(&timer), server_id, this_p, bytes);
     }
 
   /* NOT REACHED */
