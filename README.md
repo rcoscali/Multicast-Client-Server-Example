@@ -5,6 +5,10 @@
 This is a simple educational example of a multicast 
 client and server, running under UNIX and Win32.
 
+The server now can have an id from 0 to 3. Clients trace packets from all 4 servers.
+An arg has been added for server (first) for its id (0 to 3). 
+Several servers (until 4, ids being 0, 1, 2 and 3) may be launched, clients track packets from all of them, correctly tracking lost packets.
+
 # Building
 To compile, use
 
