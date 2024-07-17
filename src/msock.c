@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#ifdef UNIX
+#include <unistd.h>
+#endif
 
 #include "msock.h"
 
@@ -20,9 +23,23 @@ DieWithError(char* errorMessage)
   exit(EXIT_FAILURE);
 }
 
-
+/*
+ * mcast_send_socket
+ *
+ * This function creates a socket for sending datagrams from a multicast addrs on a given port.
+ * The address info struct is returned.
+ *
+ * @params:
+ *   @in 	ipaddr: 	multicast IPv4/IPv6 address in dotted notation
+ *   @in 	port:		port used to send the datagram
+ *   @in 	ttl:	Time to live of the packet to send
+ *   @inout 	addrinfo:	Address info structure retreived from the dotted notation
+ *
+ * @return
+ *   the socket file descriptor. -1 is something goes wrong.
+ */
 SOCKET
-mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, struct addrinfo **multicastAddr)
+mcast_send_socket(char* ipaddr, char* port,  int ttl, struct addrinfo **addrinfo)
 {
 
   SOCKET sock;
@@ -43,7 +60,7 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags    = AI_NUMERICHOST;
   int status;
-  if ((status = getaddrinfo(multicastIP, multicastPort, &hints, multicastAddr)) != 0)
+  if ((status = getaddrinfo(ipaddr, port, &hints, addrinfo)) != 0)
     {
       fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
       return -1;
@@ -54,10 +71,10 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
   /* 
      Create socket for sending multicast datagrams 
   */
-  if ((sock = socket((*multicastAddr)->ai_family, (*multicastAddr)->ai_socktype, 0)) < 0)
+  if ((sock = socket((*addrinfo)->ai_family, (*addrinfo)->ai_socktype, 0)) < 0)
     {
       perror("socket() failed");
-      freeaddrinfo(*multicastAddr);
+      freeaddrinfo(*addrinfo);
       return -1;
     }
 
@@ -65,12 +82,12 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
      Set TTL of multicast packet 
   */
   if (setsockopt(sock,
-		 (*multicastAddr)->ai_family == PF_INET6 ? IPPROTO_IPV6        : IPPROTO_IP,
-		 (*multicastAddr)->ai_family == PF_INET6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL,
-		 (char*) &multicastTTL, sizeof(multicastTTL)) != 0 )
+		 (*addrinfo)->ai_family == PF_INET6 ? IPPROTO_IPV6        : IPPROTO_IP,
+		 (*addrinfo)->ai_family == PF_INET6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL,
+		 (char*) &ttl, sizeof(ttl)) != 0 )
     {
       perror("setsockopt() failed");
-      freeaddrinfo(*multicastAddr);
+      freeaddrinfo(*addrinfo);
       return -1;
     }
     
@@ -78,7 +95,7 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
   /* 
      set the sending interface 
   */
-  if ((*multicastAddr)->ai_family == PF_INET)
+  if ((*addrinfo)->ai_family == PF_INET)
     {
       in_addr_t iface = INADDR_ANY; /* well, yeah, any */
       if(setsockopt(sock, 
@@ -87,11 +104,11 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
 		    (char*)&iface, sizeof(iface)) != 0)
 	{ 
 	  perror("interface setsockopt() sending interface");
-	  freeaddrinfo(*multicastAddr);
+	  freeaddrinfo(*addrinfo);
 	  return -1;
 	}
     }
-  else if ((*multicastAddr)->ai_family == PF_INET6)
+  else if ((*addrinfo)->ai_family == PF_INET6)
     {
       unsigned int ifindex = 0; /* 0 means 'default interface'*/
       if(setsockopt(sock, 
@@ -100,7 +117,7 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
 		    (char*)&ifindex, sizeof(ifindex)) != 0)
 	{ 
 	  perror("interface setsockopt() sending interface");
-	  freeaddrinfo(*multicastAddr);
+	  freeaddrinfo(*addrinfo);
 	  return -1;
 	}
     }
@@ -116,14 +133,28 @@ mcast_send_socket(char* multicastIP, char* multicastPort,  int multicastTTL, str
 
 
 
+/*
+ * mcast_recv_socket
+ *
+ * This function creates a socket for receiving datagrams from a multicast addrs on a given port.
+ * The receive buffer size to use is also provided.
+ *
+ * @params:
+ *   @in 	ipaddr: 	multicast IPv4/IPv6 address in dotted notation
+ *   @in 	port:		port used to send the datagram
+ *   @in 	recv_buf_sz:	size of the receive buffer for multicast datagram
+ *
+ * @return
+ *   the socket file descriptor. -1 is something goes wrong.
+ */
 SOCKET
-mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSize)
+mcast_recv_socket(char* ipaddr, char* port, int recv_buf_sz)
 {
 
   SOCKET sock;
-  struct addrinfo   hints  = { 0 };    /* Hints for name lookup */
-  struct addrinfo*  localAddr = 0;         /* Local address to bind to */
-  struct addrinfo*  multicastAddr = 0;     /* Multicast Address */
+  struct addrinfo   hints  = { 0 };    		/* Hints for name lookup */
+  struct addrinfo*  localAddr = 0, *la;        	/* Local address to bind to */
+  struct addrinfo*  addrInfo = 0;     		/* Multicast Address */
   int yes=1;
   
 #ifdef WIN32
@@ -137,7 +168,7 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
   hints.ai_family = PF_UNSPEC;
   hints.ai_flags  = AI_NUMERICHOST;
   int status;
-  if ((status = getaddrinfo(multicastIP, NULL, &hints, &multicastAddr)) != 0)
+  if ((status = getaddrinfo(ipaddr, NULL, &hints, &addrInfo)) != 0)
     {
       fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
       goto error;
@@ -147,41 +178,41 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
      Get a local address with the same family (IPv4 or IPv6) as our multicast group
      This is for receiving on a certain port.
   */
-  hints.ai_family   = multicastAddr->ai_family;
+  hints.ai_family   = addrInfo->ai_family;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags    = AI_PASSIVE; /* Return an address we can bind to */
-  if ((status = getaddrinfo(NULL, multicastPort, &hints, &localAddr)) != 0)
+  if ((status = getaddrinfo(NULL, port, &hints, &localAddr)) != 0)
     {
       fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
       goto error;
     }
   
 
-  /* Create socket for receiving datagrams */
-  if ((sock = socket(localAddr->ai_family, localAddr->ai_socktype, 0)) < 0)
+  for (la = localAddr; la != NULL; la = la->ai_next)
     {
-      perror("socket() failed");
-      goto error;
-    }
+      /* Create socket for receiving datagrams */
+      if ((sock = socket(localAddr->ai_family, localAddr->ai_socktype, 0)) == -1)
+	continue;
     
-    
-   
-  /*
-   * Enable SO_REUSEADDR to allow multiple instances of this
-   * application to receive copies of the multicast datagrams.
-   */
-  if (setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,(char*)&yes,sizeof(int)) == -1)
-    {
-      perror("setsockopt");
-      goto error;
+      /*
+       * Enable SO_REUSEADDR to allow multiple instances of this
+       * application to receive copies of the multicast datagrams.
+       */
+      if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(int)) == 0)
+	{
+	  /* Bind the local address to the multicast port */
+	  if (bind(sock, localAddr->ai_addr, localAddr->ai_addrlen) == 0)
+	    {
+	      /* success */
+	      break; 
+	    }
+	}
+      
+      close(sock);
     }
-  
-  /* Bind the local address to the multicast port */
-  if (bind(sock, localAddr->ai_addr, localAddr->ai_addrlen) != 0)
-    {
-      perror("bind() failed");
-      goto error;
-    }
+
+  if (la == NULL)
+    DieWithError("Couldn't bind the socket on one of the proposed address!\n");
 
   /* get/set socket receive buffer */
   int optval = 0;
@@ -193,7 +224,7 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
       goto error;
     }
   dfltrcvbuf = optval;
-  optval = multicastRecvBufSize;
+  optval = recv_buf_sz;
   if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (char*)&optval, sizeof(optval)) != 0)
     {
       perror("setsockopt");
@@ -205,7 +236,7 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
       goto error;
     }
   printf("tried to set socket receive buffer from %d to %d, got %d\n",
-	 dfltrcvbuf, multicastRecvBufSize, optval);
+	 dfltrcvbuf, recv_buf_sz, optval);
 
   
     
@@ -214,14 +245,14 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
    * are using IPv4 or IPv6. 
    */
   /* IPv4 */
-  if (multicastAddr->ai_family  == PF_INET &&  
-      multicastAddr->ai_addrlen == sizeof(struct sockaddr_in))
+  if (addrInfo->ai_family  == PF_INET &&  
+      addrInfo->ai_addrlen == sizeof(struct sockaddr_in))
     {
       struct ip_mreq multicastRequest;  /* Multicast address join structure */
 
       /* Specify the multicast group */
       memcpy(&multicastRequest.imr_multiaddr,
-	     &((struct sockaddr_in*)(multicastAddr->ai_addr))->sin_addr,
+	     &((struct sockaddr_in*)(addrInfo->ai_addr))->sin_addr,
 	     sizeof(multicastRequest.imr_multiaddr));
 
       /* Accept multicast from any interface */
@@ -235,14 +266,14 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
 	}
     }
   /* IPv6 */
-  else if (multicastAddr->ai_family  == PF_INET6 &&
-	   multicastAddr->ai_addrlen == sizeof(struct sockaddr_in6))
+  else if (addrInfo->ai_family  == PF_INET6 &&
+	   addrInfo->ai_addrlen == sizeof(struct sockaddr_in6))
     {
       struct ipv6_mreq multicastRequest;  /* Multicast address join structure */
 
       /* Specify the multicast group */
       memcpy(&multicastRequest.ipv6mr_multiaddr,
-	     &((struct sockaddr_in6*)(multicastAddr->ai_addr))->sin6_addr,
+	     &((struct sockaddr_in6*)(addrInfo->ai_addr))->sin6_addr,
 	     sizeof(multicastRequest.ipv6mr_multiaddr));
 
       /* Accept multicast from any interface */
@@ -265,8 +296,8 @@ mcast_recv_socket(char* multicastIP, char* multicastPort, int multicastRecvBufSi
  doreturn:
   if(localAddr)
     freeaddrinfo(localAddr);
-  if(multicastAddr)
-    freeaddrinfo(multicastAddr);
+  if(addrInfo)
+    freeaddrinfo(addrInfo);
     
   return sock;
 

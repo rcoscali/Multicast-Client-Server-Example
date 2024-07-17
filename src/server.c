@@ -9,7 +9,7 @@
  *     server <Multicast Address> <Port> <packetsize> <defer_ms> [<TTL>>]
  *
  * Examples:
- *     >server 224.0.22.1 9210 6000 1000
+ *     >server 224.0.2.1 9210 6000 1000
  *     >server ff15::1 2001 65000 1
  *
  * Written by tmouse, July 2005
@@ -53,9 +53,13 @@ main(int argc, char *argv[])
 
   int i;
   
-  if ( argc < 6 || argc > 7 )
+  if (argc == 1 ||
+      (argc == 2 && (argv[1][0] == '-' && argv[1][1] == 'h' && argv[1][2] == 0)) ||
+      argc < 6 ||
+      argc > 7)
     {
-      fprintf(stderr, "Usage: %s <server_id> <Multicast Address> <Port> <packetsize> <defer_ms> [<TTL>]\n", argv[0]);
+      fprintf(stderr, "Usage: %s <server_id> <Multicast Address> <Port> <packetsize> <defer_ms> [<TTL>]\n\n", argv[0]);
+      fprintf(stderr, "  ex.: %s 0 224.0.2.1 9210 8 465\n", argv[0]);
       exit(EXIT_FAILURE);
     }
 
@@ -82,7 +86,7 @@ main(int argc, char *argv[])
   int nr = server_id << 30;
   for (;;) /* Run forever */
     {
-      unsigned int* p_nr = (int*)sendString;
+      unsigned int* p_nr = (unsigned int*)sendString;
       *p_nr = htonl(nr);
  
       if (sendto(sock, sendString, sendStringLen, 0,

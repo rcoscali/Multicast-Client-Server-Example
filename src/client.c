@@ -9,7 +9,7 @@
  *     client <Multicast IP> <Multicast Port> <Receive Buffer Size>
  *
  * Examples:
- *     >client 224.0.22.1 9210 70000
+ *     >client 224.0.2.1 9210 70000
  *     >client ff15::1 2001 10000
  *
  * Written by tmouse, July 2005
@@ -29,12 +29,16 @@
 #include <time.h>
 #include "msock.h" 
 
-#define MULTICAST_SO_RCVBUF 300000
+#define MAX_SERVER_IDS 4
+#define MULTICAST_SO_RCVBUF 327680
 
 SOCKET     sock;                     /* Socket */
 char*      recvBuf;                  /* Buffer for received data */
 
-
+/*
+ * DieWithError
+ *   Does exactly as it said, after having freed resources
+ */
 static void
 DieWithError(char* errorMessage)
 {
@@ -47,7 +51,14 @@ DieWithError(char* errorMessage)
   exit(EXIT_FAILURE);
 }
 
-
+/*
+ * main
+ *
+ * @arguments:
+ *
+ * @return:
+ *
+ */
 int
 main(int argc, char* argv[])
 {
@@ -55,9 +66,12 @@ main(int argc, char* argv[])
   char*      multicastPort;            /* Arg: Port */
   int        recvBufLen;               /* Length of receive buffer */
 
-  if (argc != 4)
+  if (argc == 1 ||
+      (argc == 2 && (argv[1][0] == '-' && argv[1][1] == 'h' && argv[1][2] == 0)) ||
+      argc != 4)
     {
-      fprintf(stderr, "Usage: %s <Multicast IP> <Multicast Port> <Receive Buffer Size>\n", argv[0]);
+      fprintf(stderr, "Usage: %s <Multicast IP> <Multicast Port> <Receive Buffer Size>\n\n", argv[0]);
+      fprintf(stderr, "  ex.: %s 224.0.2.1 9210 1024\n", argv[0]);
       exit(EXIT_FAILURE);
     }
 
@@ -81,11 +95,11 @@ main(int argc, char* argv[])
   int rcvd = 0;
   int lost = 0;
     
-  int last_p[4];
-  last_p[0] = -1;
-  last_p[1] = -1;
-  last_p[2] = -1;
-  last_p[3] = -1;
+  int last_p[MAX_SERVER_IDS];
+  last_p[0] = 0;
+  last_p[1] = 0;
+  last_p[2] = 0;
+  last_p[3] = 0;
   for (;;) /* Run forever */
     {
       time_t timer;
@@ -108,9 +122,11 @@ main(int argc, char* argv[])
       last_p[server_id] = this_p;
         
       /* Print the received string */
+	  char datetime[128];
       time(&timer);  /* get time stamp to print with recieved data */
+	  ctime_s(datetime, 128, &timer);
       printf("Packets recvd %d (%d,%d,%d,%d) lost %d, loss ratio %f    ", rcvd, last_p[0], last_p[1], last_p[2], last_p[3], lost, (double)lost/(double)(rcvd + lost));
-      printf("Time Received: %.*s : packet (%d,%d) %d bytes\n", (int)strlen(ctime(&timer)) - 1, ctime(&timer), server_id, this_p, bytes);
+      printf("Time Received: %.*s : packet (%d,%d) %d bytes\n", (int)strlen(datetime) - 1, datetime, server_id, this_p, bytes);
     }
 
   /* NOT REACHED */

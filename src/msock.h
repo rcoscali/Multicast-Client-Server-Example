@@ -5,7 +5,7 @@
 
 */
 
-
+#pragma once
 #ifndef MSOCK_H
 #define MSOCK_H
 
@@ -17,7 +17,9 @@
 #undef socklen_t 
 #define WINVER 0x0501 
 #include <ws2tcpip.h> 
+#ifndef EWOULDBLOCK
 #define EWOULDBLOCK WSAEWOULDBLOCK
+#endif
 #define close closesocket
 #define socklen_t int
 typedef unsigned int in_addr_t;

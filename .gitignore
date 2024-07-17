@@ -1,2 +1,18 @@
 
 build/
+
+build_msvc/
+
+Debug/
+
+Release/
+
+*.ipch
+
+*.sdf
+
+*.suo
+
+*.filters
+
+*.user
